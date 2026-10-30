@@ -1,0 +1,57 @@
+# Cuando el CI falla en un PR, un modelo de Bedrock lee el log del job fallido y deja en el PR un
+# resumen de la causa probable. Se llama desde ci.yml, al final y solo si algo ha fallado:
+#
+#   explicar-fallo:
+#     needs: [lint, tests, imagen]
+#     if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+#     permissions: { contents: read, actions: read, pull-requests: write, id-token: write }
+#     uses: ./.github/workflows/explicar-fallo.yml
+#     with: { pr: "${{ github.event.pull_request.number }}" }
+#
+# La condición deja fuera los PRs de forks: su texto podría estar escrito para manipular al modelo, y
+# además GitHub no les da token OIDC. Por eso no se usa workflow_run (Fase 8): se ejecutaría con
+# permisos de escritura también para ellos.
+name: Explicar fallo
+
+on:
+  workflow_call:
+    inputs:
+      pr: { type: string, required: true }
+
+permissions: {}
+
+jobs:
+  explicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read # leer los logs de los jobs
+      pull-requests: write # comentar en el PR
+      id-token: write # OIDC → rol de AWS que solo puede invocar un modelo
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.ROL_BEDROCK_CI }} # política: bedrock:InvokeModel sobre un único modelo
+          aws-region: us-east-1
+      - name: Log de los jobs fallidos (los últimos 30 000 caracteres)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          for job in $(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" \
+                         --jq '.jobs[] | select(.conclusion == "failure") | .id'); do
+            gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$job/logs"
+          done | tail -c 30000 > fallo.log
+      - name: Pedir la explicación
+        env:
+          BEDROCK_MODELO: ${{ vars.BEDROCK_MODELO }}
+        run: uv run --frozen python scripts/explicar_fallo.py fallo.log > resumen.md
+      - name: Comentar en el PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+        run: gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file resumen.md

@@ -1,0 +1,27 @@
+# promtool test rules alertas/anomalias_test.yml
+# Dos semanas de tráfico estable (2 pet/s) y, al final, una caída a 0,2 pet/s durante 40 minutos.
+# La diferencia es 1,79 y no 1,80: la caída ya baja un poco la media de la semana (la "tendencia").
+rule_files: [anomalias.yml]
+evaluation_interval: 5m  # el mismo que el grupo: promtool usa este, no el del grupo
+tests:
+  # una muestra por minuto: con menos, rate(...[5m]) se queda sin dos puntos en algunas
+  # evaluaciones, la serie desaparece y el "for" vuelve a empezar (en el test, no en tu Prometheus)
+  - interval: 1m
+    input_series:
+      # contador: +120 por minuto = 2 pet/s durante 14 días; después +12 por minuto = 0,2 pet/s
+      - series: 'http_server_request_duration_seconds_count{job="tienda-api"}'
+        values: '0+120x20160 2419212+12x40'
+    alert_rule_test:
+      - eval_time: 13d   # tráfico normal: nada
+        alertname: TiendaTraficoAnomalo
+        exp_alerts: []
+      - eval_time: 14d10m   # la caída empezó hace 10 min: aún dentro del "for: 15m"
+        alertname: TiendaTraficoAnomalo
+        exp_alerts: []
+      - eval_time: 14d30m
+        alertname: TiendaTraficoAnomalo
+        exp_alerts:
+          - exp_labels: { severity: info }
+            exp_annotations:
+              summary: "Tráfico de la tienda fuera de lo normal para esta hora"
+              description: "1.79 pet/s de diferencia con lo esperado (hace una semana a esta hora, corregido por la tendencia)."

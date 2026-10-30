@@ -1,0 +1,27 @@
+[project]
+name = "tienda-agente"
+version = "0.1.0"
+description = "Agente de operaciones de la tienda: investiga con herramientas de solo lectura y propone"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp==2.3.0",
+    "openai==3.41.0",
+    "httpx>=0.28",
+    "kubernetes>=33.1",
+    "pyyaml>=6.0",
+    "opentelemetry-sdk>=1.38",
+    "starlette>=0.48",
+    "uvicorn>=0.37",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.4", "pytest-asyncio>=1.2", "boto3>=1.40"]  # boto3: solo scripts/explicar_fallo.py (CI)
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.uv]
+package = false

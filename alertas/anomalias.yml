@@ -1,0 +1,37 @@
+# Detección de anomalías en el tráfico de la tienda, sin herramientas de ML: solo PromQL.
+# La predicción es "lo que pasó a esta hora hace una semana, corregido por la tendencia", y la banda
+# aceptable, 3 desviaciones típicas de la última semana. Sirve de señal de contexto: las alertas que
+# despiertan a alguien siguen siendo las de SLO (Fase 7).
+groups:
+  - name: tienda-anomalias
+    # cada 5 min basta y abarata las ventanas de una semana (2016 puntos en vez de 10 080)
+    interval: 5m
+    rules:
+      - record: tienda:peticiones:rate5m
+        expr: sum(rate(http_server_request_duration_seconds_count{job="tienda-api"}[5m]))
+      - record: tienda:peticiones:media_1w
+        expr: avg_over_time(tienda:peticiones:rate5m[1w])
+      - record: tienda:peticiones:desv_1w
+        expr: stddev_over_time(tienda:peticiones:rate5m[1w])
+      # estacionalidad semanal: el lunes a las 9:00 se parece al lunes anterior a las 9:00
+      - record: tienda:peticiones:prediccion
+        expr: >-
+          tienda:peticiones:rate5m offset 1w
+          + (tienda:peticiones:media_1w - tienda:peticiones:media_1w offset 1w)
+      - alert: TiendaTraficoAnomalo
+        # la banda nunca es más estrecha que el 10 % de la media: con tráfico muy regular la
+        # desviación tiende a 0 y cualquier variación mínima dispararía
+        expr: >-
+          abs(tienda:peticiones:rate5m - tienda:peticiones:prediccion)
+          > 3 * (
+              tienda:peticiones:desv_1w > 0.1 * tienda:peticiones:media_1w
+              or 0.1 * tienda:peticiones:media_1w
+            )
+          and tienda:peticiones:media_1w > 0.1
+        for: 15m
+        labels: { severity: info }  # contexto para la guardia y para el agente, no un aviso nocturno
+        annotations:
+          summary: "Tráfico de la tienda fuera de lo normal para esta hora"
+          description: >-
+            {{ printf "%.2f" $value }} pet/s de diferencia con lo esperado
+            (hace una semana a esta hora, corregido por la tendencia).

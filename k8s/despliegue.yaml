@@ -1,0 +1,45 @@
+# El agente como una aplicación más (va al repo GitOps, Fase 6). Lee con el ServiceAccount de
+# rbac-solo-lectura.yaml y habla con el modelo por una API compatible con OpenAI.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agente
+  namespace: tienda-agente
+spec:
+  replicas: 1 # una sola: las investigaciones van de una en una y no se reparten
+  selector: { matchLabels: { app: agente } }
+  template:
+    metadata:
+      labels: { app: agente }
+    spec:
+      serviceAccountName: agente
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: agente
+          image: ghcr.io/tu-usuario/tienda-agente:0.1.0 # firmada y verificada por Kyverno (Fase 8)
+          ports: [{ containerPort: 8080, name: http }]
+          env:
+            - { name: LLM_BASE_URL, value: "http://ollama.ia:11434/v1" } # o vLLM, o un proveedor gestionado
+            - { name: LLM_MODELO, value: "qwen3:4b-instruct" }
+            - { name: PROMETHEUS_URL, value: "http://prometheus.monitoring:9090" }
+            - { name: LOKI_URL, value: "http://loki.monitoring:3100" }
+            # LLM_API_KEY y SLACK_WEBHOOK_URL, si hacen falta, desde un Secret (External Secrets, Fase 8)
+          readinessProbe: { httpGet: { path: /salud, port: http } }
+          resources:
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agente
+  namespace: tienda-agente
+spec:
+  selector: { app: agente }
+  ports: [{ port: 8080, targetPort: http }]

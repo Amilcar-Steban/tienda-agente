@@ -1,0 +1,28 @@
+# El agente lee el namespace de la tienda y nada más. El ClusterRole "view" de Kubernetes no incluye
+# los Secrets, ni exec, ni port-forward: aunque el modelo se equivoque (o lo manipulen), no puede
+# cambiar nada ni leer credenciales.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tienda-agente
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agente
+  namespace: tienda-agente
+automountServiceAccountToken: true # el agente lo necesita para leer la API
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding # RoleBinding, no ClusterRoleBinding: "view" solo dentro de "tienda"
+metadata:
+  name: agente-lee-tienda
+  namespace: tienda
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - kind: ServiceAccount
+    name: agente
+    namespace: tienda-agente

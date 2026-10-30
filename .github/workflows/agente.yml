@@ -1,0 +1,44 @@
+# CI del agente: los tests en cada PR y, si cambia algo que altera su comportamiento (el prompt, las
+# herramientas, los casos), las evaluaciones contra un modelo real servido por Ollama en el runner.
+name: Agente
+
+on:
+  pull_request:
+    paths: ["agente/**", "evals/**", "tests/**", "pyproject.toml", "uv.lock"]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv run --frozen pytest -q
+
+  evals:
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30 # en CPU, alrededor de 1 min por caso con qwen3:4b-instruct
+    permissions: { contents: read }
+    services:
+      ollama:
+        image: ollama/ollama:0.40.13
+        ports: ["11434:11434"]
+        env: { OLLAMA_CONTEXT_LENGTH: "16384" } # por defecto 4096: el agente no cabe y Ollama recorta sin avisar
+    env:
+      LLM_BASE_URL: http://localhost:11434/v1
+      LLM_MODELO: qwen3:4b-instruct
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Descargar el modelo
+        run: |
+          curl -fsS http://localhost:11434/api/pull -d "{\"model\": \"$LLM_MODELO\", \"stream\": false}"
+      - name: Evaluaciones (falla por debajo del 80 %)
+        run: uv run --frozen python evals/evaluar.py --minimo 0.8
