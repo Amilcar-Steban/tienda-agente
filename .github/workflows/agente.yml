@@ -23,7 +23,7 @@ jobs:
   evals:
     needs: tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30 # en CPU, alrededor de 1 min por caso con qwen3:4b-instruct
+    timeout-minutes: 30 # en un runner estándar (solo CPU), unos 2 min por caso: 10 min en total
     permissions: { contents: read }
     services:
       ollama:
