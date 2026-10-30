@@ -53,10 +53,10 @@ def test_un_fallo_se_devuelve_como_error_no_se_inventa():
 
 
 def test_logs_de_loki_legibles():
-    cuerpo = {"data": {"result": [{"stream": {"app": "tienda-api", "pod": "api-1", "otra": "x"},
+    cuerpo = {"data": {"result": [{"stream": {"service_name": "tienda-api", "k8s_pod_name": "api-1", "otra": "x"},
                                    "values": [["1761800000000000000", "error de conexión"]]}]}}
     salida = _backend_con(lambda req: httpx.Response(200, json=cuerpo)).logs('{app="tienda-api"}', 15)
-    assert "app=tienda-api,pod=api-1 error de conexión" in salida and "otra" not in salida
+    assert "k8s_pod_name=api-1,service_name=tienda-api error de conexión" in salida and "otra" not in salida
 
 
 def test_un_403_de_kubernetes_llega_al_modelo_como_texto():

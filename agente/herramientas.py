@@ -57,7 +57,8 @@ def crear_servidor(backend: Backend) -> MCPServer:
     @mcp.tool()
     def buscar_logs(consulta_logql: str, minutos: int = 15) -> str:
         """Busca en Loki con LogQL las últimas líneas de los últimos `minutos` (máximo 120).
-        Ejemplo: `{namespace="tienda", app="tienda-api"} |= "error"`."""
+        Las etiquetas son las de OpenTelemetry: `{service_name="tienda-api"} |= "error"`, o en
+        Kubernetes `{k8s_namespace_name="tienda", service_name="tienda-postgres"}`."""
         return _limpiar(backend.logs(consulta_logql, max(1, min(minutos, 120))))
 
     @mcp.tool()
@@ -125,7 +126,8 @@ class BackendReal:
             return crudo
         lineas = []
         for flujo in json.loads(crudo).get("data", {}).get("result", []):
-            etiquetas = ",".join(f"{k}={v}" for k, v in sorted(flujo["stream"].items()) if k in ("app", "pod", "level"))
+            etiquetas = ",".join(f"{k}={v}" for k, v in sorted(flujo["stream"].items())
+                                 if k in ("service_name", "k8s_pod_name", "detected_level"))
             lineas += [f"{time.strftime('%H:%M:%S', time.gmtime(int(ts) / 1e9))} {etiquetas} {linea}" for ts, linea in flujo["values"]]
         return "\n".join(sorted(lineas, reverse=True)) or "sin resultados"
 
